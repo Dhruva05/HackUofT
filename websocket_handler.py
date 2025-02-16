@@ -1,6 +1,5 @@
 from fastapi import WebSocket
 from video_stream import process_video
-
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
