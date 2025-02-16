@@ -1,51 +1,37 @@
 import cv2
-import mediapipe as mp
 import numpy as np
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import io
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-# Initialize MediaPipe Hand module
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5)
-mp_drawing = mp.solutions.drawing_utils
+# Initialize FastAPI app
+app = FastAPI()
 
-# Define HSV color ranges for tape detection
-lower_red1, upper_red1 = np.array([0, 100, 100]), np.array([10, 255, 255])
-lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([180, 255, 255])
-lower_green, upper_green = np.array([35, 100, 100]), np.array([85, 255, 255])
-lower_blue, upper_blue = np.array([100, 100, 100]), np.array([140, 255, 255])
+# Add trusted host middleware to allow for proper host handling
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
-def process_hand_detection(frame):
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(rgb_frame)
-    frame_bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
-    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+# Define color range for white (plastic rings)
+lower_white = np.array([0, 0, 180])  # Lower bound for white color (for rings)
+upper_white = np.array([180, 50, 255])  # Upper bound for white color (for rings)
 
-    # Color detection masks
-    mask_red = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), cv2.inRange(hsv, lower_red2, upper_red2))
-    mask_green = cv2.inRange(hsv, lower_green, upper_green)
-    mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
+# Capture video
+cap = cv2.VideoCapture(0)
 
-    hand_mask = np.zeros(frame_bgr.shape[:2], dtype=np.uint8)
+def process_white_ring_detection(frame):
+    # Convert frame to HSV color space
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
-            hand_points = np.array([(int(l.x * frame.shape[1]), int(l.y * frame.shape[0])) for l in hand_landmarks.landmark], dtype=np.int32)
-            cv2.fillConvexPoly(hand_mask, hand_points, 255)
+    # Mask creation for white ring detection
+    mask_white = cv2.inRange(hsv, lower_white, upper_white)
 
-            for point in hand_points:
-                cv2.circle(frame_bgr, tuple(point), 5, (255, 255, 255), -1)
+    # Find contours in the white mask
+    contours_white, _ = cv2.findContours(mask_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            mp_drawing.draw_landmarks(frame_bgr, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+    min_area = 100  # Filter small contours by area
+    for contour in contours_white:
+        if cv2.contourArea(contour) > min_area:
+            # Draw contours for white rings
+            cv2.drawContours(frame, [contour], -1, (255, 0, 0), 2)  # Blue for white rings
 
-    mask_red_hand = cv2.bitwise_and(mask_red, mask_red, mask=hand_mask)
-    mask_green_hand = cv2.bitwise_and(mask_green, mask_green, mask=hand_mask)
-    mask_blue_hand = cv2.bitwise_and(mask_blue, mask_blue, mask=hand_mask)
-
-    contours_red, _ = cv2.findContours(mask_red_hand, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours_green, _ = cv2.findContours(mask_green_hand, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours_blue, _ = cv2.findContours(mask_blue_hand, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    cv2.drawContours(frame_bgr, contours_red, -1, (0, 0, 255), 2)
-    cv2.drawContours(frame_bgr, contours_green, -1, (0, 255, 0), 2)
-    cv2.drawContours(frame_bgr, contours_blue, -1, (255, 0, 0), 2)
-
-    return frame_bgr
+    return frame
