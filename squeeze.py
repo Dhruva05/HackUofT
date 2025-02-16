@@ -34,5 +34,3 @@ async def send_dimensions(dimensions: Dimensions):
 @app.on_event("shutdown")
 def shutdown():
     ser.close()
-
-

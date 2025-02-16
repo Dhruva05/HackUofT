@@ -25,3 +25,5 @@ async def process_video():
 
         # Yield the Base64-encoded frame
         yield frame_encoded
+
+
